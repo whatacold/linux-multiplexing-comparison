@@ -27,9 +27,8 @@
 #include <unistd.h>
 #include <assert.h>
 
-#define FD_NUM (FD_SETSIZE * 5 + 100)
 #define READ_SIZE 10
-#define TIMEOUT_SEC 5
+#define TIMEOUT_SEC 60
 
 #if 0
 #define STR_HELPER(x) #x
@@ -40,9 +39,13 @@
 #pragma message "FD_SETSIZE = " #FD_SETSIZE
 #endif
 
-int fds[FD_NUM] = {0};
+int *fds;
+fd_set *fd_set_array;
+struct pollfd *pfds;
+struct epoll_event *evs;
+int nceil;
+int ncur;
 char buf[READ_SIZE + 1] = {0};
-fd_set fd_set_array[FD_NUM / FD_SETSIZE + 1]; /* 当FD_NUM刚好是FD_SETSIZE整数倍时，会多一份 */
 
 unsigned long
 do_select()
@@ -52,10 +55,11 @@ do_select()
     struct timeval start, end;
 
     FD_ZERO(fd_set_array);
-    for(i = 0; i < FD_NUM; i++) {
-        FD_SET((fds[i] % FD_SETSIZE), (&fd_set_array[fds[i] / FD_SETSIZE])); /* XXX FD_NUM需要是FD_SETSIZE的整数倍 */
+    for(i = 0; i < ncur - 1; i++) {
+        FD_SET((fds[i] % FD_SETSIZE), (fd_set_array + (fds[i] / FD_SETSIZE)));
     }
-    max = fds[i - 1] + 1;
+    FD_SET((fds[nceil - 1] % FD_SETSIZE), (fd_set_array + (fds[nceil - 1] / FD_SETSIZE)));
+    max = fds[nceil - 1] + 1;
 
     ts.tv_sec = TIMEOUT_SEC;
     ts.tv_usec = 0;
@@ -71,10 +75,13 @@ do_select()
         break;
     default:
         fprintf(stderr, "%d fds are ready for reading.\n", rc);
-        for(i = 0; i < FD_NUM; i++) {
+        for(i = 0; i < ncur - 1; i++) {
             if(FD_ISSET((fds[i] % FD_SETSIZE), &fd_set_array[fds[i] / FD_SETSIZE])) {
                 read(fds[i], buf, READ_SIZE);
             }
+        }
+        if(FD_ISSET((fds[nceil - 1] % FD_SETSIZE), &fd_set_array[fds[nceil - 1] / FD_SETSIZE])) {
+            read(fds[nceil - 1], buf, READ_SIZE);
         }
         break;
     }
@@ -86,16 +93,19 @@ unsigned long
 do_poll()
 {
     int i, rc;
-    struct pollfd pfds[FD_NUM];
     struct timeval start, end;
 
-    for(i = 0; i < FD_NUM; i++) {
+    for(i = 0; i < ncur - 1; i++) {
         memset(&pfds[i], 0, sizeof(pfds[i]));
         pfds[i].fd = fds[i];
         pfds[i].events = POLLIN;
     }
+    memset(&pfds[i], 0, sizeof(pfds[i]));
+    pfds[i].fd = fds[nceil - 1];
+    pfds[i].events = POLLIN;
+
     gettimeofday(&start, NULL);
-    rc = poll(pfds, FD_NUM, TIMEOUT_SEC * 1000);
+    rc = poll(pfds, ncur, TIMEOUT_SEC * 1000);
     gettimeofday(&end, NULL);
     switch(rc) {
     case -1:
@@ -106,7 +116,7 @@ do_poll()
         break;
     default:
         fprintf(stderr, "%d fds are ready for reading.\n", rc);
-        for(i = 0; i < FD_NUM; i++) {
+        for(i = 0; i < ncur - 1; i++) {
             if(pfds[i].revents & POLLIN) {
                 read(pfds[i].fd, buf, READ_SIZE);
             }
@@ -121,21 +131,32 @@ unsigned long
 do_epoll()
 {
     int i, rc, epfd;
-    struct epoll_event ev, evs[FD_NUM];
+    struct epoll_event ev;
     struct timeval start, end;
 
     epfd = epoll_create1(0);
     assert(epfd > 0);
-    for(i = 0; i < FD_NUM; i++) {
+
+    /*
+     * XXX
+     * epoll don't support regular files or directory,
+     * and disallows adding duplicate fd.
+     */
+    for(i = 0; i < ncur - 1; i++) {
         memset(&ev, 0, sizeof(ev));
         ev.events = EPOLLIN | EPOLLET;
-        fds[i] = STDIN_FILENO;
-        ev.data.fd = fds[i];    // XXX epoll don't support regular files or directory, and disallows adding duplicate fd.
+        ev.data.fd = fds[i];
         rc = epoll_ctl(epfd, EPOLL_CTL_ADD, fds[i], &ev);
         assert(0 == rc);
     }
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.fd = fds[nceil - 1];
+    rc = epoll_ctl(epfd, EPOLL_CTL_ADD, fds[nceil - 1], &ev);
+    assert(0 == rc);
+
     gettimeofday(&start, NULL);
-    rc = epoll_wait(epfd, evs, FD_NUM, TIMEOUT_SEC * 1000);
+    rc = epoll_wait(epfd, evs, ncur, TIMEOUT_SEC * 1000);
     gettimeofday(&end, NULL);
     switch(rc) {
     case -1:
@@ -158,52 +179,66 @@ do_epoll()
 int
 main(int argc, char **argv)
 {
-    int i, cnt;
+    int i, pass, init, step, pos;
     unsigned long elapsed = 0;
     struct sockaddr_in saddr;
 
-    if(2 != argc) {
-        fprintf(stderr, "Usage: %s num\n", argv[0]);
+    if(6 != argc) {
+        fprintf(stderr, "Usage: %s -1|0|1 <pass> <nceil> <init> <step>\n", argv[0]);
         exit(1);
     }
-    cnt = atoi(argv[1]);
+    pos = atoi(argv[1]);
+    pass = atoi(argv[2]);
+    nceil = atoi(argv[3]);
+    init = atoi(argv[4]);
+    step = atoi(argv[5]);
 
-    fprintf(stderr, "FD_NUM=%d\n", FD_NUM);
+    /* alloc memory */
+    fds = calloc(nceil, sizeof(int));
+    fd_set_array = calloc((nceil / FD_SETSIZE), sizeof(fd_set));
+    pfds = calloc(nceil, sizeof(struct pollfd));
+    evs = calloc(nceil, sizeof(struct epoll_event));
+    assert(fds && fd_set_array && pfds && evs);
 
-    /* FD_NUM个仅连接，但是没有数据可接收的socket */
+    /* (nceil-1) sockets which don't receive data */
     memset(&saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(12345);
     inet_pton(AF_INET, "127.0.0.1", &saddr.sin_addr);
-    for(i = 0; i < FD_NUM - 1; i++) {
+    for(i = 0; i < nceil - 1; i++) {
         fprintf(stderr, "build connection #%d\n", i);
         fds[i] = socket(AF_INET, SOCK_STREAM, 0);
         assert(fds[i] >= 0);
         assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
     }
 
-    /* 留一个连接有数据可接收的socket */
+    /* the only socket to receive data */
     saddr.sin_port = htons(12346);
     fds[i] = socket(AF_INET, SOCK_STREAM, 0);
     assert(fds[i] >= 0);
     assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
 
-    elapsed = 0;
-    for(i = 0; i < cnt; i++) {
-        elapsed += do_select();
-    }
-    fprintf(stderr, "elapsed time of select(): %d\n", elapsed);
-    return 0;
+    for(ncur = init; ncur <= nceil;) {
+        fprintf(stderr, "round with number of fds: %d\n", ncur);
 
-    elapsed = 0;
-    for(i = 0; i < cnt; i++) {
-        elapsed += do_poll();
-    }
-    fprintf(stderr, "elapsed time of poll(): %d\n", elapsed);
+        elapsed = 0;
+        for(i = 0; i < pass; i++) {
+            elapsed += do_select();
+        }
+        fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / pass);
 
-    elapsed = 0;
-    for(i = 0; i < cnt; i++) {
-        elapsed += do_epoll();
+        elapsed = 0;
+        for(i = 0; i < pass; i++) {
+            elapsed += do_poll();
+        }
+        fprintf(stderr, "elapsed time of poll(): %dus\n", elapsed / pass);
+
+        elapsed = 0;
+        for(i = 0; i < pass; i++) {
+            elapsed += do_epoll();
+        }
+        fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / pass);
+
+        ncur += step;
     }
-    fprintf(stderr, "elapsed time of epoll(): %d\n", elapsed / 1000);
 }
