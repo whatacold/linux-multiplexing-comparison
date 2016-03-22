@@ -9,6 +9,9 @@
  * nc监听一个端口，同时通过重定向发送小文件给对方（制造读事件）；
  * 此处建立到nc的连接。
  * 想办法打破 FD_SETSIZE 的限制，扩大fd数量。
+ *
+ *
+ * http://stackoverflow.com/questions/7976388/increasing-limit-of-fd-setsize-and-select
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,15 +33,6 @@
 #define READ_SIZE 10
 #define TIMEOUT_SEC 60
 
-#if 0
-#define STR_HELPER(x) #x
-#define STR(x) STR_HELPER(x)
-#error "FD_NUM exceeds FD_SETSIZE"
-#define STR_MSG "foo"
-#pragma message "a compilation msg " STR_MSG
-#pragma message "FD_SETSIZE = " #FD_SETSIZE
-#endif
-
 int *fds;
 fd_set *fd_set_array;
 struct pollfd *pfds;
@@ -46,6 +40,8 @@ struct epoll_event *evs;
 int nceil;
 int ncur;
 char buf[READ_SIZE + 1] = {0};
+
+unsigned long result[4][1000]; // FIXME alloc dynamically
 
 unsigned long
 do_select()
@@ -130,7 +126,7 @@ do_poll()
 unsigned long
 do_epoll()
 {
-    int i, rc, epfd;
+    int i, rc, epfd, flags;
     struct epoll_event ev;
     struct timeval start, end;
 
@@ -149,6 +145,9 @@ do_epoll()
         rc = epoll_ctl(epfd, EPOLL_CTL_ADD, fds[i], &ev);
         assert(0 == rc);
     }
+    flags = fcntl(fds[nceil - 1], F_GETFL);
+    flags |= O_NONBLOCK;
+    assert(0 == fcntl(fds[nceil - 1], F_SETFL, flags));
     memset(&ev, 0, sizeof(ev));
     ev.events = EPOLLIN | EPOLLET;
     ev.data.fd = fds[nceil - 1];
@@ -177,21 +176,34 @@ do_epoll()
 }
 
 int
+is_ready()
+{
+    struct timeval tv;
+    fd_set rset;
+
+    FD_ZERO(&rset);
+    FD_SET(fds[nceil - 1], &rset);
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+
+    return (1 == select(fds[nceil - 1] + 1, &rset, NULL, NULL, &tv));
+}
+
+int
 main(int argc, char **argv)
 {
-    int i, pass, init, step, pos;
+    int i, pass, init, step;
     unsigned long elapsed = 0;
     struct sockaddr_in saddr;
 
-    if(6 != argc) {
-        fprintf(stderr, "Usage: %s -1|0|1 <pass> <nceil> <init> <step>\n", argv[0]);
+    if(5 != argc) {
+        fprintf(stderr, "Usage: %s <pass> <nceil> <init> <step>\n", argv[0]);
         exit(1);
     }
-    pos = atoi(argv[1]);
-    pass = atoi(argv[2]);
-    nceil = atoi(argv[3]);
-    init = atoi(argv[4]);
-    step = atoi(argv[5]);
+    pass = atoi(argv[1]);
+    nceil = atoi(argv[2]);
+    init = atoi(argv[3]);
+    step = atoi(argv[4]);
 
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
@@ -218,27 +230,41 @@ main(int argc, char **argv)
     assert(fds[i] >= 0);
     assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
 
+    int round = 0;
     for(ncur = init; ncur <= nceil;) {
         fprintf(stderr, "round with number of fds: %d\n", ncur);
 
+        result[0][round] = ncur;
+
         elapsed = 0;
         for(i = 0; i < pass; i++) {
+            while(!is_ready());
             elapsed += do_select();
         }
+        result[1][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / pass);
 
         elapsed = 0;
         for(i = 0; i < pass; i++) {
+            while(!is_ready());
             elapsed += do_poll();
         }
+        result[2][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of poll(): %dus\n", elapsed / pass);
 
         elapsed = 0;
         for(i = 0; i < pass; i++) {
+            while(!is_ready());
             elapsed += do_epoll();
         }
+        result[3][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / pass);
 
         ncur += step;
+        round++;
+    }
+
+    for(i = 0; i < round; i++) {
+        printf("%lu\t%lu\t%lu\t%lu\n", result[0][i], result[1][i], result[2][i], result[3][i]);
     }
 }
