@@ -207,7 +207,7 @@ main(int argc, char **argv)
 
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
-    fd_set_array = calloc((nceil / FD_SETSIZE), sizeof(fd_set));
+    fd_set_array = calloc((nceil / FD_SETSIZE) + 1, sizeof(fd_set)); /* maybe one fd_set more than expected */
     pfds = calloc(nceil, sizeof(struct pollfd));
     evs = calloc(nceil, sizeof(struct epoll_event));
     assert(fds && fd_set_array && pfds && evs);
@@ -224,14 +224,14 @@ main(int argc, char **argv)
         assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
     }
 
-    /* the only socket to receive data */
+    /* the only socket that has data to receive */
     saddr.sin_port = htons(12346);
     fds[i] = socket(AF_INET, SOCK_STREAM, 0);
     assert(fds[i] >= 0);
     assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
 
     int round = 0;
-    for(ncur = init; ncur <= nceil;) {
+    for(ncur = init; ncur <= nceil; ncur += step) {
         fprintf(stderr, "round with number of fds: %d\n", ncur);
 
         result[0][round] = ncur;
@@ -260,10 +260,10 @@ main(int argc, char **argv)
         result[3][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / pass);
 
-        ncur += step;
         round++;
     }
 
+    printf("# #fds\tselect\tpoll\tepoll\n", result[0][i], result[1][i], result[2][i], result[3][i]);
     for(i = 0; i < round; i++) {
         printf("%lu\t%lu\t%lu\t%lu\n", result[0][i], result[1][i], result[2][i], result[3][i]);
     }
