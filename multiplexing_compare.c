@@ -17,7 +17,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
+/**
+ * XXX dirty hack of FD_SETSIZE of select(2)
+ */
+#include <bits/typesizes.h>
+#undef __FD_SETSIZE
+#define __FD_SETSIZE 10240
 #include <sys/select.h>
+
 #include <sys/poll.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
@@ -34,14 +42,14 @@
 #define TIMEOUT_SEC 60
 
 int *fds;
-fd_set *fd_set_array;
+fd_set read_set;
 struct pollfd *pfds;
 struct epoll_event *evs;
 int nceil;
 int ncur;
 char buf[READ_SIZE + 1] = {0};
 
-unsigned long result[4][1000]; // FIXME alloc dynamically
+unsigned long result[4][1000]; /* FIXME alloc dynamically */
 
 unsigned long
 do_select()
@@ -50,17 +58,17 @@ do_select()
     struct timeval ts;
     struct timeval start, end;
 
-    FD_ZERO(fd_set_array);
+    FD_ZERO(&read_set);
     for(i = 0; i < ncur - 1; i++) {
-        FD_SET((fds[i] % FD_SETSIZE), (fd_set_array + (fds[i] / FD_SETSIZE)));
+        FD_SET(fds[i], &read_set);
     }
-    FD_SET((fds[nceil - 1] % FD_SETSIZE), (fd_set_array + (fds[nceil - 1] / FD_SETSIZE)));
+    FD_SET(fds[nceil - 1], &read_set);
     max = fds[nceil - 1] + 1;
 
     ts.tv_sec = TIMEOUT_SEC;
     ts.tv_usec = 0;
     gettimeofday(&start, NULL);
-    rc = select(max, fd_set_array, NULL, NULL, &ts);
+    rc = select(max, &read_set, NULL, NULL, &ts);
     gettimeofday(&end, NULL);
     switch(rc) {
     case -1:
@@ -72,11 +80,11 @@ do_select()
     default:
         fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < ncur - 1; i++) {
-            if(FD_ISSET((fds[i] % FD_SETSIZE), &fd_set_array[fds[i] / FD_SETSIZE])) {
+            if(FD_ISSET(fds[i], &read_set)) {
                 read(fds[i], buf, READ_SIZE);
             }
         }
-        if(FD_ISSET((fds[nceil - 1] % FD_SETSIZE), &fd_set_array[fds[nceil - 1] / FD_SETSIZE])) {
+        if(FD_ISSET(fds[nceil - 1], &read_set)) {
             read(fds[nceil - 1], buf, READ_SIZE);
         }
         break;
@@ -179,14 +187,13 @@ int
 is_ready()
 {
     struct timeval tv;
-    fd_set rset;
 
-    FD_ZERO(&rset);
-    FD_SET(fds[nceil - 1], &rset);
+    FD_ZERO(&read_set);
+    FD_SET(fds[nceil - 1], &read_set);
     tv.tv_sec = 1;
     tv.tv_usec = 0;
 
-    return (1 == select(fds[nceil - 1] + 1, &rset, NULL, NULL, &tv));
+    return (1 == select(fds[nceil - 1] + 1, &read_set, NULL, NULL, &tv));
 }
 
 int
@@ -207,10 +214,9 @@ main(int argc, char **argv)
 
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
-    fd_set_array = calloc((nceil / FD_SETSIZE) + 1, sizeof(fd_set)); /* maybe one fd_set more than expected */
     pfds = calloc(nceil, sizeof(struct pollfd));
     evs = calloc(nceil, sizeof(struct epoll_event));
-    assert(fds && fd_set_array && pfds && evs);
+    assert(fds && pfds && evs);
 
     /* (nceil-1) sockets which don't receive data */
     memset(&saddr, 0, sizeof(saddr));
@@ -224,7 +230,7 @@ main(int argc, char **argv)
         assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
     }
 
-    /* the only socket that has data to receive */
+    /* the only socket that data would be received from */
     saddr.sin_port = htons(12346);
     fds[i] = socket(AF_INET, SOCK_STREAM, 0);
     assert(fds[i] >= 0);
