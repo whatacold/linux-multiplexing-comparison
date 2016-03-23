@@ -21,9 +21,9 @@
 /**
  * XXX dirty hack of FD_SETSIZE of select(2)
  */
-#include <bits/typesizes.h>
-#undef __FD_SETSIZE
-#define __FD_SETSIZE 10240
+//#include <bits/typesizes.h>
+//#undef __FD_SETSIZE
+//#define __FD_SETSIZE 10240
 #include <sys/select.h>
 
 #include <sys/poll.h>
@@ -49,7 +49,7 @@ int nceil;
 int ncur;
 char buf[READ_SIZE + 1] = {0};
 
-unsigned long result[4][1000]; /* FIXME alloc dynamically */
+unsigned long result[4][1000]; /* TODO alloc dynamically */
 
 unsigned long
 do_select()
@@ -57,12 +57,17 @@ do_select()
     int max = -1, i, rc;
     struct timeval ts;
     struct timeval start, end;
+    int fd;
 
     FD_ZERO(&read_set);
+printf("select cur: %d\n", ncur);
     for(i = 0; i < ncur - 1; i++) {
-        FD_SET(fds[i], &read_set);
+printf("i: %d, ncur: %d, fd %d\n", i, ncur, fds[i]);
+fd = fds[i];
+        FD_SET(fd, &read_set);
     }
-    FD_SET(fds[nceil - 1], &read_set);
+    fd = fds[nceil - 1];
+    FD_SET(fd, &read_set);
     max = fds[nceil - 1] + 1;
 
     ts.tv_sec = TIMEOUT_SEC;
@@ -80,11 +85,13 @@ do_select()
     default:
         fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < ncur - 1; i++) {
-            if(FD_ISSET(fds[i], &read_set)) {
+            fd = fds[i];
+            if(FD_ISSET(fd, &read_set)) {
                 read(fds[i], buf, READ_SIZE);
             }
         }
-        if(FD_ISSET(fds[nceil - 1], &read_set)) {
+        fd = fds[nceil - 1];
+        if(FD_ISSET(fd, &read_set)) {
             read(fds[nceil - 1], buf, READ_SIZE);
         }
         break;
@@ -151,7 +158,11 @@ do_epoll()
         ev.events = EPOLLIN | EPOLLET;
         ev.data.fd = fds[i];
         rc = epoll_ctl(epfd, EPOLL_CTL_ADD, fds[i], &ev);
+        //assert(0 == rc);
+        if(-1 == rc) {
+            perror("epoll_ctl failed");
         assert(0 == rc);
+        }
     }
     flags = fcntl(fds[nceil - 1], F_GETFL);
     flags |= O_NONBLOCK;
@@ -186,10 +197,13 @@ do_epoll()
 int
 is_ready()
 {
+return 1;
     struct timeval tv;
+    int fd;
 
     FD_ZERO(&read_set);
-    FD_SET(fds[nceil - 1], &read_set);
+    fd = fds[nceil -1];
+    FD_SET(fd, &read_set);
     tv.tv_sec = 1;
     tv.tv_usec = 0;
 
@@ -211,6 +225,7 @@ main(int argc, char **argv)
     nceil = atoi(argv[2]);
     init = atoi(argv[3]);
     step = atoi(argv[4]);
+printf("%d %d %d %d\n", pass, nceil, init, step);
 
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
@@ -227,7 +242,11 @@ main(int argc, char **argv)
         fprintf(stderr, "build connection #%d\n", i);
         fds[i] = socket(AF_INET, SOCK_STREAM, 0);
         assert(fds[i] >= 0);
-        assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
+        //assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
+        if(connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)) == -1) {
+            fprintf(stderr, "failed to connect: %s", strerror(errno));
+            exit(1);
+        }
     }
 
     /* the only socket that data would be received from */
@@ -250,6 +269,7 @@ main(int argc, char **argv)
         result[1][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / pass);
 
+#if 0
         elapsed = 0;
         for(i = 0; i < pass; i++) {
             while(!is_ready());
@@ -265,11 +285,12 @@ main(int argc, char **argv)
         }
         result[3][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / pass);
+#endif
 
         round++;
     }
 
-    printf("# #fds\tselect\tpoll\tepoll\n", result[0][i], result[1][i], result[2][i], result[3][i]);
+    printf("# #fds\tselect\tpoll\tepoll\n");
     for(i = 0; i < round; i++) {
         printf("%lu\t%lu\t%lu\t%lu\n", result[0][i], result[1][i], result[2][i], result[3][i]);
     }
