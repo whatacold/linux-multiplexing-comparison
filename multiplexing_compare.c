@@ -60,10 +60,8 @@ do_select()
     int fd;
 
     FD_ZERO(&read_set);
-printf("select cur: %d\n", ncur);
     for(i = 0; i < ncur - 1; i++) {
-printf("i: %d, ncur: %d, fd %d\n", i, ncur, fds[i]);
-fd = fds[i];
+        fd = fds[i];
         FD_SET(fd, &read_set);
     }
     fd = fds[nceil - 1];
@@ -225,7 +223,11 @@ main(int argc, char **argv)
     nceil = atoi(argv[2]);
     init = atoi(argv[3]);
     step = atoi(argv[4]);
-printf("%d %d %d %d\n", pass, nceil, init, step);
+
+    if(nceil > FD_SETSIZE) {
+        fprintf(stderr, "nceil shouldn't be larger than FD_SETSIZE(%d).\n", FD_SETSIZE);
+        exit(1);
+    }
 
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
@@ -269,7 +271,6 @@ printf("%d %d %d %d\n", pass, nceil, init, step);
         result[1][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / pass);
 
-#if 0
         elapsed = 0;
         for(i = 0; i < pass; i++) {
             while(!is_ready());
@@ -285,7 +286,6 @@ printf("%d %d %d %d\n", pass, nceil, init, step);
         }
         result[3][round] = elapsed / pass;
         fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / pass);
-#endif
 
         round++;
     }
@@ -294,4 +294,8 @@ printf("%d %d %d %d\n", pass, nceil, init, step);
     for(i = 0; i < round; i++) {
         printf("%lu\t%lu\t%lu\t%lu\n", result[0][i], result[1][i], result[2][i], result[3][i]);
     }
+
+    free(fds);
+    free(pfds);
+    free(evs);
 }
