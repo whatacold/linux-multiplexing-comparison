@@ -1,4 +1,7 @@
 # vim: set filetype=gnuplot :
+set title "Comparison of efficiencies of select, poll and epoll"
+set xlabel "number of fds\nby http://whatacold.com"
+set ylabel "block time of syscall(us)"
 set term png size 600, 400
 set output "result.png"
 plot "result.dat" using 1:2 title "select" with linespoints, \
