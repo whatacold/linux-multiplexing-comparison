@@ -116,7 +116,7 @@ do_select()
         fprintf(stderr, "select timed out\n");
         break;
     default:
-        fprintf(stderr, "%d fds are ready for reading.\n", rc);
+        //fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < ncur - 1; i++) {
             fd = fds[i];
             if(MY_FD_ISSET(fd, rdset)) {
@@ -159,7 +159,7 @@ do_poll()
         fprintf(stderr, "poll timed out\n");
         break;
     default:
-        fprintf(stderr, "%d fds are ready for reading.\n", rc);
+        //fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < ncur - 1; i++) {
             if(pfds[i].revents & POLLIN) {
                 read(pfds[i].fd, buf, READ_SIZE);
@@ -217,12 +217,13 @@ do_epoll()
         fprintf(stderr, "epoll timed out\n");
         break;
     default:
-        fprintf(stderr, "%d fds are ready for reading.\n", rc);
+        //fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < rc; i++) {
             while(-1 != read(evs[i].data.fd, buf, READ_SIZE));
         }
         break;
     }
+    close(epfd);
 
     return (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
 }
