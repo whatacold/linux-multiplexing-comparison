@@ -21,7 +21,7 @@
 /**
  * XXX dirty hack of FD_SETSIZE of select(2)
  *
- * DOES NOT WORK!
+ * IT DOES NOT WORK!
  */
 //#include <bits/typesizes.h>
 //#undef __FD_SETSIZE
@@ -41,10 +41,22 @@
 #include <assert.h>
 
 #define READ_SIZE 10
-#define TIMEOUT_SEC 60
+#define TIMEOUT_SEC 60      /* TODO make it self-adaptive */
+
+int *fds;
+unsigned char *rdset;
+int rdset_nbytes;
+struct pollfd *pfds;
+struct epoll_event *evs;
+int nceil;
+int ncur;
+char buf[READ_SIZE + 1] = {0};
+
+unsigned long result[4][1000]; /* TODO alloc dynamically */
 
 /**
- * similar macros for select, based on the assumption that set is a byte array.
+ * below functions are similar to `FD_*' macros of select,
+ * based on the assumption that the set is a byte array.
  */
 void
 MY_FD_SET(int fd, unsigned char *set)
@@ -70,21 +82,11 @@ MY_FD_ZERO(unsigned char *set, int nbytes)
     memset(set, 0, nbytes);
 }
 
-int MY_FD_SET_NBYTES(int max_fd)
+int
+MY_FD_SET_NBYTES(int max_fd)
 {
     return max_fd / 8 + 1;
 }
-
-int *fds;
-unsigned char *rdset;
-int rdset_nbytes;
-struct pollfd *pfds;
-struct epoll_event *evs;
-int nceil;
-int ncur;
-char buf[READ_SIZE + 1] = {0};
-
-unsigned long result[4][1000]; /* TODO alloc dynamically */
 
 unsigned long
 do_select()
