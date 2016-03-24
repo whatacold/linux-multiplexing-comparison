@@ -20,6 +20,8 @@
 
 /**
  * XXX dirty hack of FD_SETSIZE of select(2)
+ *
+ * DOES NOT WORK!
  */
 //#include <bits/typesizes.h>
 //#undef __FD_SETSIZE
@@ -41,8 +43,41 @@
 #define READ_SIZE 10
 #define TIMEOUT_SEC 60
 
+/**
+ * similar macros for select, based on the assumption that set is a byte array.
+ */
+void
+MY_FD_SET(int fd, unsigned char *set)
+{
+    int slot;
+
+    slot = fd / 8;
+    set[slot] |= 1L << (fd % 8);
+}
+
+int
+MY_FD_ISSET(int fd, const unsigned char *set)
+{
+    int slot;
+
+    slot = fd / 8;
+    return set[slot] & (1L << (fd % 8));
+}
+
+void
+MY_FD_ZERO(unsigned char *set, int nbytes)
+{
+    memset(set, 0, nbytes);
+}
+
+int MY_FD_SET_NBYTES(int max_fd)
+{
+    return max_fd / 8 + 1;
+}
+
 int *fds;
-fd_set read_set;
+unsigned char *rdset;
+int rdset_nbytes;
 struct pollfd *pfds;
 struct epoll_event *evs;
 int nceil;
@@ -59,19 +94,19 @@ do_select()
     struct timeval start, end;
     int fd;
 
-    FD_ZERO(&read_set);
+    MY_FD_ZERO(rdset, (nceil + 1) / 8);
     for(i = 0; i < ncur - 1; i++) {
         fd = fds[i];
-        FD_SET(fd, &read_set);
+        MY_FD_SET(fd, rdset);
     }
     fd = fds[nceil - 1];
-    FD_SET(fd, &read_set);
+    MY_FD_SET(fd, rdset);
     max = fds[nceil - 1] + 1;
 
     ts.tv_sec = TIMEOUT_SEC;
     ts.tv_usec = 0;
     gettimeofday(&start, NULL);
-    rc = select(max, &read_set, NULL, NULL, &ts);
+    rc = select(max, (fd_set *)rdset, NULL, NULL, &ts);
     gettimeofday(&end, NULL);
     switch(rc) {
     case -1:
@@ -84,12 +119,12 @@ do_select()
         fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < ncur - 1; i++) {
             fd = fds[i];
-            if(FD_ISSET(fd, &read_set)) {
+            if(MY_FD_ISSET(fd, rdset)) {
                 read(fds[i], buf, READ_SIZE);
             }
         }
         fd = fds[nceil - 1];
-        if(FD_ISSET(fd, &read_set)) {
+        if(MY_FD_ISSET(fd, rdset)) {
             read(fds[nceil - 1], buf, READ_SIZE);
         }
         break;
@@ -184,7 +219,7 @@ do_epoll()
     default:
         fprintf(stderr, "%d fds are ready for reading.\n", rc);
         for(i = 0; i < rc; i++) {
-            read(evs[i].data.fd, buf, READ_SIZE);
+            while(-1 != read(evs[i].data.fd, buf, READ_SIZE));
         }
         break;
     }
@@ -195,17 +230,16 @@ do_epoll()
 int
 is_ready()
 {
-return 1;
     struct timeval tv;
     int fd;
 
-    FD_ZERO(&read_set);
+    MY_FD_ZERO(rdset, rdset_nbytes);
     fd = fds[nceil -1];
-    FD_SET(fd, &read_set);
+    MY_FD_SET(fd, rdset);
     tv.tv_sec = 1;
     tv.tv_usec = 0;
 
-    return (1 == select(fds[nceil - 1] + 1, &read_set, NULL, NULL, &tv));
+    return (1 == select(fd + 1, (fd_set *)rdset, NULL, NULL, &tv));
 }
 
 int
@@ -224,16 +258,12 @@ main(int argc, char **argv)
     init = atoi(argv[3]);
     step = atoi(argv[4]);
 
-    if(nceil > FD_SETSIZE) {
-        fprintf(stderr, "nceil shouldn't be larger than FD_SETSIZE(%d).\n", FD_SETSIZE);
-        exit(1);
-    }
-
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
     pfds = calloc(nceil, sizeof(struct pollfd));
     evs = calloc(nceil, sizeof(struct epoll_event));
-    assert(fds && pfds && evs);
+    rdset = calloc(nceil, 8);
+    assert(fds && pfds && evs && rdset);
 
     /* (nceil-1) sockets which don't receive data */
     memset(&saddr, 0, sizeof(saddr));
@@ -244,11 +274,7 @@ main(int argc, char **argv)
         fprintf(stderr, "build connection #%d\n", i);
         fds[i] = socket(AF_INET, SOCK_STREAM, 0);
         assert(fds[i] >= 0);
-        //assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
-        if(connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)) == -1) {
-            fprintf(stderr, "failed to connect: %s", strerror(errno));
-            exit(1);
-        }
+        assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
     }
 
     /* the only socket that data would be received from */
@@ -256,6 +282,8 @@ main(int argc, char **argv)
     fds[i] = socket(AF_INET, SOCK_STREAM, 0);
     assert(fds[i] >= 0);
     assert(0 == connect(fds[i], (struct sockaddr *)&saddr, sizeof(saddr)));
+
+    rdset_nbytes = MY_FD_SET_NBYTES(fds[i]);
 
     int round = 0;
     for(ncur = init; ncur <= nceil; ncur += step) {
@@ -298,4 +326,5 @@ main(int argc, char **argv)
     free(fds);
     free(pfds);
     free(evs);
+    free(rdset);
 }
