@@ -1,5 +1,5 @@
 As we already know, there are three I/O multiplexing mechanisms on Linux: select(2), poll(2) and epoll(7).
-And epoll scalls far more better than select and poll, as in wikipedia[1]:
+And epoll scales far more better than select and poll, as in wikipedia[1]:
 
 > unlike the older system calls, which operate in O(n) time, epoll operates in O(1) time
 
