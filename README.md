@@ -11,8 +11,11 @@ This repo demostrates how these three mechanisms differ in performance
 when watching various number of fds, from small to large.
 
 It works as below:
+
 1. open specified number of sockets, where no data will be received.
+
 1. open a "special" socket, say ss, where data would be received constantly.
+
 1. use a multiplexing mechanism to watch some "normal" sockets in setp 1 and `ss`,
 count the time it consumes before notifying there is data comes in `ss`.
 
@@ -28,6 +31,8 @@ if everything goes fine. Check it out.
 # A sample result
 
 Here is a sample chart in my Fedora 22 box, with 4-core 2.20GHZ Intel Core i5 CPU and 8GB RAM.
+
+![performance difference of Linux I/O multiplexing](multiplexing_compare.png)
 
 # Some notes
 
