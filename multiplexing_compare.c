@@ -1,33 +1,12 @@
 /**
- * 意图：想测试select poll epoll三种方式在fd很多的情况下的性能差异。
- * 但是种种原因导致没有测试成功。
- *
- * 1. select支持的句柄数，在系统宏FD_SETSIZE中限制死了，只有1024个，太小了导致select和poll没看到有明显的差别。
- * 2. epoll不支持添加常规文件（如/dev/null，但是终端STDIN_FILENO是可以的）的句柄，又不能添加重复句柄，导致epoll都没有测成功。
- *
- * 下一步计划：
- * nc监听一个端口，同时通过重定向发送小文件给对方（制造读事件）；
- * 此处建立到nc的连接。
- * 想办法打破 FD_SETSIZE 的限制，扩大fd数量。
- *
- *
- * http://stackoverflow.com/questions/7976388/increasing-limit-of-fd-setsize-and-select
+ * Demotrate the performance differences among the three I/O multiplexing mechanisms on Linux,
+ * i.e. select, poll and epoll.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-
-/**
- * XXX dirty hack of FD_SETSIZE of select(2)
- *
- * IT DOES NOT WORK!
- */
-//#include <bits/typesizes.h>
-//#undef __FD_SETSIZE
-//#define __FD_SETSIZE 10240
 #include <sys/select.h>
-
 #include <sys/poll.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
@@ -185,8 +164,8 @@ do_epoll()
 
     /*
      * XXX
-     * epoll don't support regular files or directory,
-     * and disallows adding duplicate fd.
+     * epoll doesn't support regular files or directory,
+     * and refuses adding duplicate fd.
      */
     for(i = 0; i < ncur - 1; i++) {
         memset(&ev, 0, sizeof(ev));
