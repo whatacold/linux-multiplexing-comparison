@@ -25,7 +25,7 @@ count the time it consumes before notifying there is data comes in `ss`.
     # su # login as root
     # ./run.sh
 
-After above operations, the chart `multiplexing_compare.png` is what we want,
+After above operations, the chart `multiplexing_compare.png` will be rendered and is what we want,
 if everything goes fine. Check it out.
 
 # A sample result
@@ -38,15 +38,17 @@ Here is a sample chart in my Fedora 22 box, with 4-core 2.20GHZ Intel Core i5 CP
 
 * `FD_SETSIZE` of select
 
-The four macros `FD_*`, which come with `select`, depend on a macro, `FD_SETSIZE`,
-which is 1024 in my box. What it means is that `select` could only watch fd less than 1024,
-that is definitely not what I want.
+    The four macros `FD_*`, which come with `select`, depend on a macro, `FD_SETSIZE`,
+    which is 1024 in my box. What it means is that `select` could only watch fd less than 1024,
+    that is definitely not what I want.
 
-So in order to break this limitation, I handle the bit array of fd myself.
-And it breaks the POSIX standard too.
+    So in order to break this limitation, I handle the bit array of fd myself.
+    And it breaks the POSIX standard too.
 
 * epoll
 
-the watched fd of epoll could not be a regular one, such as regular file fd.
+    the watched fd of epoll could not be a regular one, such as regular file fd.
+
+# References
 
 [1] [epoll - Wikipedia](https://en.wikipedia.org/wiki/Epoll)
