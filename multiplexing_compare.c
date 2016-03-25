@@ -248,18 +248,23 @@ is_ready()
 int
 main(int argc, char **argv)
 {
-    int i, pass, init, step;
+    int i, npass, ninit, nstep;
     unsigned long elapsed = 0;
     struct sockaddr_in saddr;
 
     if(5 != argc) {
-        fprintf(stderr, "Usage: %s <pass> <nceil> <init> <step>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <npass> <nceil> <ninit> <nstep>\n\n"
+                "<npass>    pass of calls of select/poll/epoll in a test round.\n"
+                "<nceil>    max number of fds to handle.\n"
+                "<ninit>    initial number of fds to handle.\n"
+                "<nstep>    incremental number of fds for a next test.\n",
+                argv[0]);
         exit(1);
     }
-    pass = atoi(argv[1]);
+    npass = atoi(argv[1]);
     nceil = atoi(argv[2]);
-    init = atoi(argv[3]);
-    step = atoi(argv[4]);
+    ninit = atoi(argv[3]);
+    nstep = atoi(argv[4]);
 
     /* alloc memory */
     fds = calloc(nceil, sizeof(int));
@@ -268,7 +273,7 @@ main(int argc, char **argv)
     rdset = calloc(nceil, 8);
     assert(fds && pfds && evs && rdset);
 
-    /* (nceil-1) sockets which don't receive data */
+    /* (nceil-1) sockets which have no data to receive */
     memset(&saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(12345);
@@ -289,34 +294,34 @@ main(int argc, char **argv)
     rdset_nbytes = MY_FD_SET_NBYTES(fds[i]);
 
     int round = 0;
-    for(ncur = init; ncur <= nceil; ncur += step) {
+    for(ncur = ninit; ncur <= nceil; ncur += nstep) {
         fprintf(stderr, "round with number of fds: %d\n", ncur);
 
         result[0][round] = ncur;
 
         elapsed = 0;
-        for(i = 0; i < pass; i++) {
+        for(i = 0; i < npass; i++) {
             while(!is_ready());
             elapsed += do_select();
         }
-        result[1][round] = elapsed / pass;
-        fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / pass);
+        result[1][round] = elapsed / npass;
+        fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / npass);
 
         elapsed = 0;
-        for(i = 0; i < pass; i++) {
+        for(i = 0; i < npass; i++) {
             while(!is_ready());
             elapsed += do_poll();
         }
-        result[2][round] = elapsed / pass;
-        fprintf(stderr, "elapsed time of poll(): %dus\n", elapsed / pass);
+        result[2][round] = elapsed / npass;
+        fprintf(stderr, "elapsed time of poll(): %dus\n", elapsed / npass);
 
         elapsed = 0;
-        for(i = 0; i < pass; i++) {
+        for(i = 0; i < npass; i++) {
             while(!is_ready());
             elapsed += do_epoll();
         }
-        result[3][round] = elapsed / pass;
-        fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / pass);
+        result[3][round] = elapsed / npass;
+        fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / npass);
 
         round++;
     }
@@ -326,6 +331,9 @@ main(int argc, char **argv)
         printf("%lu\t%lu\t%lu\t%lu\n", result[0][i], result[1][i], result[2][i], result[3][i]);
     }
 
+    for(i = 0; i < nceil; i++) {
+        close(fds[i]);
+    }
     free(fds);
     free(pfds);
     free(evs);
