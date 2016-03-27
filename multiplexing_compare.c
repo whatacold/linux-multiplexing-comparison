@@ -75,7 +75,7 @@ do_select()
     struct timeval start, end;
     int fd;
 
-    MY_FD_ZERO(rdset, (nceil + 1) / 8);
+    MY_FD_ZERO(rdset, rdset_nbytes);
     for(i = 0; i < ncur - 1; i++) {
         fd = fds[i];
         MY_FD_SET(fd, rdset);
