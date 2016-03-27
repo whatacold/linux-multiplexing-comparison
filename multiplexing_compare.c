@@ -177,6 +177,7 @@ do_epoll()
     flags = fcntl(fds[nceil - 1], F_GETFL);
     flags |= O_NONBLOCK;
     assert(0 == fcntl(fds[nceil - 1], F_SETFL, flags));
+
     memset(&ev, 0, sizeof(ev));
     ev.events = EPOLLIN | EPOLLET;
     ev.data.fd = fds[nceil - 1];
@@ -270,7 +271,7 @@ main(int argc, char **argv)
 
     int round = 0;
     for(ncur = ninit; ncur <= nceil; ncur += nstep) {
-        fprintf(stderr, "round with number of fds: %d\n", ncur);
+        //fprintf(stderr, "round with number of fds: %d\n", ncur);
 
         result[0][round] = ncur;
 
@@ -280,7 +281,7 @@ main(int argc, char **argv)
             elapsed += do_select();
         }
         result[1][round] = elapsed / npass;
-        fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / npass);
+        //fprintf(stderr, "elapsed time of select(): %dus\n", elapsed / npass);
 
         elapsed = 0;
         for(i = 0; i < npass; i++) {
@@ -288,7 +289,7 @@ main(int argc, char **argv)
             elapsed += do_poll();
         }
         result[2][round] = elapsed / npass;
-        fprintf(stderr, "elapsed time of poll(): %dus\n", elapsed / npass);
+        //fprintf(stderr, "elapsed time of poll(): %dus\n", elapsed / npass);
 
         elapsed = 0;
         for(i = 0; i < npass; i++) {
@@ -296,7 +297,7 @@ main(int argc, char **argv)
             elapsed += do_epoll();
         }
         result[3][round] = elapsed / npass;
-        fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / npass);
+        //fprintf(stderr, "elapsed time of epoll(): %dus\n", elapsed / npass);
 
         round++;
     }
