@@ -172,7 +172,7 @@ do_epoll()
         ev.events = EPOLLIN | EPOLLET;
         ev.data.fd = fds[i];
         rc = epoll_ctl(epfd, EPOLL_CTL_ADD, fds[i], &ev);
-        //assert(0 == rc);
+        assert(0 == rc);
         if(-1 == rc) {
             perror("epoll_ctl failed");
         assert(0 == rc);
