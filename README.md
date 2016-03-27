@@ -30,6 +30,7 @@ if everything goes fine. Check it out.
 
 # A sample result
 
+A picture is worth a thousand words.
 Here is a sample chart in my Fedora 22 box, with 4-core 2.20GHZ Intel Core i5 CPU and 8GB RAM.
 
 ![performance difference of Linux I/O multiplexing](multiplexing_compare.png)
