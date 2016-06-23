@@ -1,5 +1,5 @@
 /**
- * Demotrate the performance differences among the three I/O multiplexing mechanisms on Linux,
+ * Demonstrate the performance differences among the three I/O multiplexing mechanisms on Linux,
  * i.e. select, poll and epoll.
  */
 #include <stdio.h>
